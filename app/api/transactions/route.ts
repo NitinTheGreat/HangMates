@@ -21,13 +21,14 @@ export async function GET(request: NextRequest) {
   const limit = parseInt(searchParams.get("limit") || "20");
   const cursor = searchParams.get("cursor");
 
-  let query = Transaction.find({ userId: currentUser._id })
+  const filter: Record<string, unknown> = { userId: currentUser._id };
+  if (cursor) {
+    filter._id = { $lt: cursor };
+  }
+
+  const query = Transaction.find(filter)
     .sort({ createdAt: -1 })
     .limit(limit + 1);
-
-  if (cursor) {
-    query = query.where("_id").lt(cursor);
-  }
 
   const transactions = await query.exec();
   const hasNext = transactions.length > limit;
