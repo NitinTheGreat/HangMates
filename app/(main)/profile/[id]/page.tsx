@@ -1,13 +1,12 @@
-import { getCurrentUser } from "@/lib/auth";
-import { redirect } from "next/navigation";
+import { auth } from "@clerk/nextjs/server";
+import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
+import connectToDatabase from "@/lib/db";
+import User from "@/models/User";
 import GlassCard from "@/components/ui/GlassCard";
-import GradientButton from "@/components/ui/GradientButton";
-import CoinBadge from "@/components/ui/CoinBadge";
 import FIFACard from "@/components/cards/FIFACard";
 import RadarChart from "@/components/cards/RadarChart";
 import {
-  Pencil,
   Star,
   Calendar,
   Clock,
@@ -52,13 +51,6 @@ const TIME_BLOCK_ICONS: Record<string, React.ElementType> = {
   "21:00": Moon,
 };
 
-const TIME_BLOCK_LABELS: Record<string, string> = {
-  "06:00": "Morn",
-  "12:00": "Aftn",
-  "17:00": "Eve",
-  "21:00": "Night",
-};
-
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const OCCASION_LABELS: Record<string, string> = {
@@ -74,38 +66,23 @@ const OCCASION_LABELS: Record<string, string> = {
   custom: "Custom",
 };
 
-export default async function ProfilePage() {
-  const user = await getCurrentUser();
+export default async function OtherProfilePage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { userId } = await auth();
+  if (!userId) redirect("/sign-in");
 
-  if (!user) {
-    redirect("/sign-in");
-  }
+  const { id } = await params;
+
+  await connectToDatabase();
+  const user = await User.findById(id);
+
+  if (!user) notFound();
 
   const plainUser = JSON.parse(JSON.stringify(user));
 
-  // Not onboarded
-  if (!user.onboardingComplete) {
-    return (
-      <div className="space-y-4">
-        <GlassCard className="text-center py-10 border-primary/20">
-          <div className="w-16 h-16 rounded-2xl bg-primary/20 mx-auto mb-4 flex items-center justify-center">
-            <Users className="w-8 h-8 text-primary" />
-          </div>
-          <h1 className="text-xl font-bold text-text-primary mb-2">
-            Complete Your Profile
-          </h1>
-          <p className="text-text-secondary text-sm mb-6 max-w-xs mx-auto">
-            Set up your vibe stats, choose your occasions, and start getting booked!
-          </p>
-          <Link href="/onboarding">
-            <GradientButton size="lg">Get Started</GradientButton>
-          </Link>
-        </GlassCard>
-      </div>
-    );
-  }
-
-  // Build availability lookup
   const availGrid: Record<number, string[]> = {};
   if (user.availability) {
     for (const a of user.availability) {
@@ -114,25 +91,15 @@ export default async function ProfilePage() {
     }
   }
 
-  const vibeRatingEmoji = (r: number) =>
-    ["", "😐", "⚡", "👍", "🔥", "🤝"][r] || "⭐";
-
   return (
-    <div className="space-y-4 pb-8">
-      {/* Section 1: FIFA Card + Radar */}
-      <div className="relative">
-        <Link
-          href="/onboarding"
-          className="absolute top-3 right-3 z-10 glass px-3 py-1.5 rounded-full text-xs text-text-secondary hover:text-primary transition-colors flex items-center gap-1"
-        >
-          <Pencil className="w-3 h-3" /> Edit
-        </Link>
-        <FIFACard user={plainUser} variant="full" showBookButton={false} />
-      </div>
+    <div className="space-y-4 pb-28">
+      {/* FIFA Card */}
+      <FIFACard user={plainUser} variant="full" showBookButton={false} />
 
+      {/* Radar */}
       <RadarChart stats={plainUser.stats || {}} />
 
-      {/* Section 2: About */}
+      {/* About */}
       {plainUser.bio && (
         <GlassCard>
           <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-widest mb-2">
@@ -144,25 +111,20 @@ export default async function ProfilePage() {
         </GlassCard>
       )}
 
-      {/* Section 3: Badges */}
+      {/* Badges */}
       <GlassCard>
         <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-widest mb-3">
           Badges Earned
         </h2>
-        {(!plainUser.badges || plainUser.badges.length === 0) ? (
-          <p className="text-text-muted text-sm">
-            No badges yet — get booked and earn badges!
-          </p>
+        {!plainUser.badges?.length ? (
+          <p className="text-text-muted text-sm">No badges yet</p>
         ) : (
           <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-1">
             {plainUser.badges.map(
               (badge: { badgeType: string; count: number }, i: number) => {
                 const Icon = BADGE_ICONS[badge.badgeType] || Star;
                 return (
-                  <div
-                    key={i}
-                    className="flex flex-col items-center gap-1 flex-shrink-0"
-                  >
+                  <div key={i} className="flex flex-col items-center gap-1 flex-shrink-0">
                     <div className="relative w-14 h-14 rounded-full glass flex items-center justify-center">
                       <Icon className="w-6 h-6 text-primary" />
                       {badge.count > 1 && (
@@ -182,19 +144,11 @@ export default async function ProfilePage() {
         )}
       </GlassCard>
 
-      {/* Section 4: Availability */}
+      {/* Availability */}
       <GlassCard>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-widest">
-            Availability
-          </h2>
-          <Link
-            href="/onboarding"
-            className="text-xs text-primary hover:text-primary-hover"
-          >
-            Edit
-          </Link>
-        </div>
+        <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-widest mb-3">
+          Availability
+        </h2>
         <div className="space-y-2">
           {[0, 1, 2, 3, 4, 5, 6].map((day) => (
             <div key={day} className="flex items-center gap-2">
@@ -209,9 +163,7 @@ export default async function ProfilePage() {
                     <div
                       key={time}
                       className={`flex-1 flex items-center justify-center gap-1 py-1 rounded-lg text-[10px] font-medium ${
-                        isActive
-                          ? "bg-primary text-white"
-                          : "bg-bg-surface text-text-muted"
+                        isActive ? "bg-primary text-white" : "bg-bg-surface text-text-muted"
                       }`}
                     >
                       <Icon className="w-3 h-3" />
@@ -224,7 +176,7 @@ export default async function ProfilePage() {
         </div>
       </GlassCard>
 
-      {/* Section 5: Occasions */}
+      {/* Occasions */}
       {plainUser.occasionTags?.length > 0 && (
         <GlassCard>
           <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-widest mb-3">
@@ -243,7 +195,7 @@ export default async function ProfilePage() {
         </GlassCard>
       )}
 
-      {/* Section 6: Reviews */}
+      {/* Reviews */}
       <GlassCard>
         <h2 className="text-xs font-semibold text-text-secondary uppercase tracking-widest mb-3">
           Reviews
@@ -251,8 +203,8 @@ export default async function ProfilePage() {
         <p className="text-text-muted text-sm">No reviews yet</p>
       </GlassCard>
 
-      {/* Section 7: My Squad */}
-      {plainUser.squadId ? (
+      {/* Squad */}
+      {plainUser.squadId && (
         <Link href={`/squads/${plainUser.squadId}`}>
           <GlassCard hover className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
@@ -260,48 +212,28 @@ export default async function ProfilePage() {
             </div>
             <div className="flex-1">
               <h3 className="text-sm font-semibold text-text-primary">
-                My Squad
+                View Squad
               </h3>
-              <p className="text-text-muted text-xs">View squad details →</p>
-            </div>
-          </GlassCard>
-        </Link>
-      ) : (
-        <Link href="/squads/create">
-          <GlassCard hover className="flex items-center gap-3 border-primary/20">
-            <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
-              <Users className="w-5 h-5 text-primary" />
-            </div>
-            <div className="flex-1">
-              <h3 className="text-sm font-semibold text-text-primary">
-                Create Your Squad
-              </h3>
-              <p className="text-text-muted text-xs">
-                Team up and get booked together
-              </p>
+              <p className="text-text-muted text-xs">See their squad →</p>
             </div>
           </GlassCard>
         </Link>
       )}
 
-      {/* Section 8: Stats Overview */}
+      {/* Stats */}
       <GlassCard>
         <div className="grid grid-cols-3 gap-4 text-center">
           <div>
             <div className="flex items-center justify-center gap-1 text-primary mb-1">
               <Calendar className="w-4 h-4" />
-              <span className="text-lg font-bold">
-                {plainUser.totalBookings || 0}
-              </span>
+              <span className="text-lg font-bold">{plainUser.totalBookings || 0}</span>
             </div>
             <span className="text-text-muted text-xs">Bookings</span>
           </div>
           <div>
             <div className="flex items-center justify-center gap-1 text-secondary mb-1">
               <Star className="w-4 h-4" />
-              <span className="text-lg font-bold">
-                {plainUser.rating?.toFixed(1) || "0.0"}
-              </span>
+              <span className="text-lg font-bold">{plainUser.rating?.toFixed(1) || "0.0"}</span>
             </div>
             <span className="text-text-muted text-xs">Rating</span>
           </div>
@@ -309,10 +241,7 @@ export default async function ProfilePage() {
             <div className="flex items-center justify-center gap-1 text-tertiary mb-1">
               <Clock className="w-4 h-4" />
               <span className="text-lg font-bold">
-                {new Date(plainUser.createdAt).toLocaleDateString("en", {
-                  month: "short",
-                  year: "2-digit",
-                })}
+                {new Date(plainUser.createdAt).toLocaleDateString("en", { month: "short", year: "2-digit" })}
               </span>
             </div>
             <span className="text-text-muted text-xs">Joined</span>
@@ -320,9 +249,15 @@ export default async function ProfilePage() {
         </div>
       </GlassCard>
 
-      {/* FriendCoins */}
-      <div className="flex justify-center pt-2">
-        <CoinBadge balance={plainUser.friendCoins || 0} />
+      {/* Sticky Book CTA */}
+      <div className="fixed bottom-[72px] left-0 right-0 z-40">
+        <div className="mx-auto max-w-[430px] p-4">
+          <Link href={`/book/${plainUser._id}`}>
+            <button className="w-full gradient-button text-white font-semibold py-3.5 px-6 rounded-full flex items-center justify-center gap-2 shadow-lg shadow-primary/30">
+              Book This Friend · {plainUser.ratePerHour} FC/hr
+            </button>
+          </Link>
+        </div>
       </div>
     </div>
   );

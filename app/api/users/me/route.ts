@@ -21,6 +21,47 @@ export async function PATCH(request: Request) {
 
   const body = await request.json();
 
+  // Validation
+  if (body.age !== undefined) {
+    const age = Number(body.age);
+    if (age < 16 || age > 35) {
+      return Response.json(
+        { error: "Age must be between 16 and 35" },
+        { status: 400 }
+      );
+    }
+  }
+
+  if (body.bio !== undefined && body.bio.length > 200) {
+    return Response.json(
+      { error: "Bio must be 200 characters or less" },
+      { status: 400 }
+    );
+  }
+
+  if (body.stats) {
+    for (const [key, value] of Object.entries(body.stats)) {
+      const num = Number(value);
+      if (num < 0 || num > 100) {
+        return Response.json(
+          { error: `Stat "${key}" must be between 0 and 100` },
+          { status: 400 }
+        );
+      }
+    }
+  }
+
+  if (
+    body.onboardingComplete === true &&
+    body.occasionTags &&
+    body.occasionTags.length === 0
+  ) {
+    return Response.json(
+      { error: "Select at least 1 occasion tag" },
+      { status: 400 }
+    );
+  }
+
   // Whitelist updateable fields
   const allowedFields = [
     "name",

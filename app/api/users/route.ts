@@ -14,6 +14,8 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const university = searchParams.get("university");
   const online = searchParams.get("online");
+  const search = searchParams.get("search");
+  const excludeSquad = searchParams.get("excludeSquad");
   const sortBy = searchParams.get("sortBy") || "rating";
   const limit = parseInt(searchParams.get("limit") || "20");
   const cursor = searchParams.get("cursor");
@@ -21,17 +23,29 @@ export async function GET(request: NextRequest) {
   const query: Record<string, unknown> = {};
   if (university) query.university = university;
   if (online === "true") query.isOnline = true;
+  if (search) {
+    query.name = { $regex: search, $options: "i" };
+  }
+  if (excludeSquad === "true") {
+    query.squadId = { $exists: false };
+  }
+
+  // Exclude the requesting user from results
+  const currentUser = await User.findOne({ clerkId: userId });
+  if (currentUser) {
+    query._id = { $ne: currentUser._id };
+  }
 
   const sortOptions: Record<string, 1 | -1> = {};
   if (sortBy === "rating") sortOptions.rating = -1;
   else if (sortBy === "coins") sortOptions.friendCoins = -1;
   else sortOptions.createdAt = -1;
 
-  let userQuery = User.find(query).sort(sortOptions).limit(limit + 1);
-
   if (cursor) {
-    userQuery = userQuery.where("_id").gt(cursor);
+    query._id = { ...((query._id as object) || {}), $gt: cursor };
   }
+
+  let userQuery = User.find(query).sort(sortOptions).limit(limit + 1);
 
   const users = await userQuery.exec();
   const hasNext = users.length > limit;

@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { auth } from "@clerk/nextjs/server";
 import connectToDatabase from "@/lib/db";
 import Squad from "@/models/Squad";
@@ -16,7 +17,10 @@ export async function GET(
   await connectToDatabase();
 
   const squad = await Squad.findById(id)
-    .populate("members", "name profileImage rating stats isOnline")
+    .populate(
+      "members",
+      "name age profileImage bio role stats isOnline ratePerHour occasionTags totalBookings rating badges department university"
+    )
     .populate("creatorId", "name profileImage");
 
   if (!squad) {
@@ -46,11 +50,19 @@ export async function PATCH(
   }
 
   if (squad.creatorId.toString() !== currentUser?._id.toString()) {
-    return Response.json({ error: "Only the creator can update this squad" }, { status: 403 });
+    return Response.json(
+      { error: "Only the creator can update this squad" },
+      { status: 403 }
+    );
   }
 
   const body = await request.json();
-  const allowedFields = ["name", "tagline", "bannerImage", "members", "ratePerHour"];
+  const allowedFields = [
+    "name",
+    "tagline",
+    "bannerImage",
+    "ratePerHour",
+  ];
   const updates: Record<string, unknown> = {};
 
   for (const field of allowedFields) {
@@ -59,7 +71,9 @@ export async function PATCH(
     }
   }
 
-  const updatedSquad = await Squad.findByIdAndUpdate(id, updates, { new: true });
+  const updatedSquad = await Squad.findByIdAndUpdate(id, updates, {
+    new: true,
+  });
 
   return Response.json({ squad: updatedSquad });
 }
@@ -84,16 +98,38 @@ export async function DELETE(
   }
 
   if (squad.creatorId.toString() !== currentUser?._id.toString()) {
-    return Response.json({ error: "Only the creator can delete this squad" }, { status: 403 });
+    return Response.json(
+      { error: "Only the creator can delete this squad" },
+      { status: 403 }
+    );
   }
 
-  // Remove squadId from all members
-  await User.updateMany(
-    { squadId: squad._id },
-    { $unset: { squadId: "" } }
-  );
+  // Atomic soft delete with member cleanup
+  const session = await mongoose.startSession();
+  try {
+    session.startTransaction();
 
-  await Squad.findByIdAndDelete(id);
+    // Remove squadId from all members
+    await User.updateMany(
+      { squadId: squad._id },
+      { $unset: { squadId: "" } },
+      { session }
+    );
+
+    // Soft delete
+    await Squad.findByIdAndUpdate(
+      id,
+      { isActive: false },
+      { session }
+    );
+
+    await session.commitTransaction();
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
 
   return Response.json({ success: true });
 }
