@@ -9,7 +9,10 @@ export async function POST(req: Request) {
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 
   if (!WEBHOOK_SECRET) {
-    throw new Error("Please add CLERK_WEBHOOK_SECRET to .env.local");
+    return Response.json(
+      { message: "Webhook not configured. Users are created on first login." },
+      { status: 200 }
+    );
   }
 
   const headerPayload = await headers();
